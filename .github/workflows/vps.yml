@@ -1,13 +1,39 @@
-name: Free VPS
-on: [workflow_dispatch]
-jobs:
-  run:
-    runs-on: ubuntu-latest
-    steps:
-      - run: |
-          sudo apt update
-          sudo apt install openssh-server -y
-          sudo systemctl start ssh
-          sudo echo "root:пароль123" | sudo chpasswd
-          sudo service ssh restart
-          curl -s https://serveo.net | sh
+- name: Create Public Tunnel with Serveo
+  run: |
+    # Запускаем SSH-сервер в фоне (если ещё не запущен)
+    sudo service ssh restart
+
+    # Запускаем Serveo — пробрасываем порт 22 на публичный URL
+    # Используем nohup и /dev/null для корректного фонового выполнения
+    nohup ssh -R 80:localhost:22 serveo.net > tunnel.log 2>&1 &
+
+    # Ждём, пока Serveo сгенерирует URL
+    sleep 15
+
+    # Извлекаем публичный URL из лога
+    URL=$(grep -oP 'https?://\S+\.serveo\.net' tunnel.log | head -1)
+
+    if [ -z "$URL" ]; then
+      echo "❌ Не удалось создать туннель. Проверь лог:"
+      cat tunnel.log
+      exit 1
+    fi
+
+    # Выводим данные для подключения
+    echo "✅ VPS АКТИВЕН!"
+    echo "🌐 Публичный URL: $URL"
+    echo "👤 Логин: root"
+    echo "🔑 Пароль: MySuperSecretPassword123"
+    echo "⏳ Сервер работает 6 часов."
+
+    # Сохраняем данные в артефакт
+    mkdir -p artifacts
+    echo "URL=$URL" > artifacts/connection.txt
+    echo "LOGIN=root" >> artifacts/connection.txt
+    echo "PASSWORD=MySuperSecretPassword123" >> artifacts/connection.txt
+
+- name: Upload Connection Info
+  uses: actions/upload-artifact@v3
+  with:
+    name: vps-connection
+    path: artifacts/connection.txt
