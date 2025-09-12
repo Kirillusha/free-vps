@@ -1,0 +1,57 @@
+name: free-vps
+on: [workflow_dispatch]  # Запуск вручную
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest  # 2 ядра, 7GB RAM, Ubuntu 22.04
+    steps:
+      - name: Setup SSH Server
+        run: |
+          # Устанавливаем SSH-сервер
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+
+          # Меняем пароль root
+          echo "root:MySuperSecretPassword123" | sudo chpasswd
+
+          # Разрешаем вход root по паролю
+          sudo sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+          # Запускаем SSH
+          sudo service ssh start
+
+          # Устанавливаем Serveo для публичного доступа
+          sudo apt-get install -y curl
+          curl -s http://localhost:8080 > /dev/null 2>&1 &  # Заглушка для фонового процесса
+
+      - name: Create Public Tunnel with Serveo
+        run: |
+          # Запускаем Serveo — пробрасываем порт 22 на публичный URL
+          ssh -R 80:localhost:22 serveo.net 2>&1 | tee tunnel.log &
+          sleep 10
+
+          # Извлекаем публичный URL
+          URL=$(grep -oP 'https?://\S+\.serveo\.net' tunnel.log | head -1)
+          if [ -z "$URL" ]; then
+            echo "❌ Не удалось создать туннель."
+            exit 1
+          fi
+
+          # Выводим данные для подключения
+          echo "✅ VPS АКТИВЕН!"
+          echo "🌐 Публичный URL: $URL"
+          echo "👤 Логин: root"
+          echo "🔑 Пароль: MySuperSecretPassword123"
+          echo "⏳ Сервер работает 6 часов."
+
+          # Сохраняем данные в артефакт
+          echo "URL=$URL" > connection.txt
+          echo "LOGIN=root" >> connection.txt
+          echo "PASSWORD=MySuperSecretPassword123" >> connection.txt
+
+      - name: Upload Connection Info
+        uses: actions/upload-artifact@v3
+        with:
+          name: vps-connection
+          path: connection.txt
